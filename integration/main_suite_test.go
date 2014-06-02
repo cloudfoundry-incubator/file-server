@@ -1,4 +1,4 @@
-package main_test
+package integration_test
 
 import (
 	"github.com/cloudfoundry-incubator/inigo/fake_cc"
