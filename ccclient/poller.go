@@ -24,11 +24,9 @@ type poller struct {
 	logger       lager.Logger
 }
 
-func NewPoller(transport http.RoundTripper, pollInterval time.Duration) Poller {
+func NewPoller(httpClient *http.Client, pollInterval time.Duration) Poller {
 	return &poller{
-		client: &http.Client{
-			Transport: transport,
-		},
+		client:       httpClient,
 		pollInterval: pollInterval,
 		logger:       cf_lager.New("Poller"),
 	}

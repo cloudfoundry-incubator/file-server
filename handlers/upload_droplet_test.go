@@ -90,8 +90,8 @@ var _ = Describe("UploadDroplet", func() {
 		ccUrl, err := url.Parse(ccAddress)
 		Ω(err).ShouldNot(HaveOccurred())
 		ccUrl.User = url.UserPassword("bob", "password")
-		uploader := ccclient.NewUploader(ccUrl, http.DefaultTransport)
-		poller := ccclient.NewPoller(http.DefaultTransport, 100*time.Millisecond)
+		uploader := ccclient.NewUploader(ccUrl, &http.Client{})
+		poller := ccclient.NewPoller(&http.Client{}, 100*time.Millisecond)
 
 		r, err := handlers.New("", uploader, poller, logger)
 		Ω(err).ShouldNot(HaveOccurred())

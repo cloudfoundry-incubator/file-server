@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cloudfoundry-incubator/cf-debug-server"
+	"github.com/cloudfoundry-incubator/cf-http"
 	"github.com/cloudfoundry-incubator/cf-lager"
 	"github.com/cloudfoundry-incubator/file-server/ccclient"
 	"github.com/cloudfoundry-incubator/file-server/handlers"
@@ -83,16 +84,25 @@ var dropsondeDestination = flag.String(
 	"Destination for dropsonde-emitted metrics.",
 )
 
+var communicationTimeout = flag.Duration(
+	"communicationTimeout",
+	30*time.Second,
+	"Timeout applied to all HTTP requests.",
+)
+
 const (
 	ccUploadDialTimeout         = 10 * time.Second
 	ccUploadKeepAlive           = 30 * time.Second
 	ccUploadTLSHandshakeTimeout = 10 * time.Second
 )
 
+func init() {
+	flag.Parse()
+	cf_http.Initialize(*communicationTimeout)
+}
+
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
-
-	flag.Parse()
 
 	logger := cf_lager.New("file-server")
 	cf_debug_server.Run()
@@ -151,8 +161,11 @@ func initializeServer(logger lager.Logger) ifrit.Runner {
 		TLSHandshakeTimeout: ccUploadTLSHandshakeTimeout,
 	}
 
-	uploader := ccclient.NewUploader(ccUrl, transport)
-	poller := ccclient.NewPoller(transport, *ccJobPollingInterval)
+	pollerHttpClient := cf_http.NewClient()
+	pollerHttpClient.Transport = transport
+
+	uploader := ccclient.NewUploader(ccUrl, &http.Client{Transport: transport})
+	poller := ccclient.NewPoller(pollerHttpClient, *ccJobPollingInterval)
 
 	fileServerHandler, err := handlers.New(*staticDirectory, uploader, poller, logger)
 	if err != nil {

@@ -77,8 +77,8 @@ var _ = Describe("UploadBuildArtifacts", func() {
 		ccUrl, err := url.Parse(ccAddress)
 		Ω(err).ShouldNot(HaveOccurred())
 		ccUrl.User = url.UserPassword("bob", "password")
-		uploader := ccclient.NewUploader(ccUrl, http.DefaultTransport)
-		poller := ccclient.NewPoller(http.DefaultTransport, 0)
+		uploader := ccclient.NewUploader(ccUrl, &http.Client{})
+		poller := ccclient.NewPoller(&http.Client{}, 0)
 
 		r, err := handlers.New("", uploader, poller, logger)
 		Ω(err).ShouldNot(HaveOccurred())

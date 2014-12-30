@@ -41,7 +41,10 @@ var _ = Describe("Uploader", func() {
 
 		Context("when not cancelling", func() {
 			JustBeforeEach(func() {
-				u = ccclient.NewUploader(baseURL, transport)
+				httpClient := &http.Client{
+					Transport: transport,
+				}
+				u = ccclient.NewUploader(baseURL, httpClient)
 				response, usedURL, uploadErr = u.Upload(primaryURL, filename, incomingRequest, make(chan struct{}))
 			})
 
@@ -240,7 +243,10 @@ var _ = Describe("Uploader", func() {
 				uploadCompleted = make(chan struct{})
 
 				go func() {
-					u = ccclient.NewUploader(baseURL, transport)
+					httpClient := &http.Client{
+						Transport: transport,
+					}
+					u = ccclient.NewUploader(baseURL, httpClient)
 					response, usedURL, uploadErr = u.Upload(primaryURL, filename, incomingRequest, cancelChan)
 					close(uploadCompleted)
 				}()
