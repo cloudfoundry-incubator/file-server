@@ -101,6 +101,7 @@ var _ = Describe("File server", func() {
 
 			session = start()
 			ioutil.WriteFile(filepath.Join(servedDirectory, "test"), []byte("hello"), os.ModePerm)
+			ioutil.WriteFile(filepath.Join(servedDirectory, "test.sha1"), []byte("some-hash"), os.ModePerm)
 		})
 
 		It("should return that file on GET request", func() {
@@ -109,6 +110,7 @@ var _ = Describe("File server", func() {
 			defer resp.Body.Close()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(resp.Header.Get("ETag")).To(Equal(fmt.Sprintf(`"%s"`, "some-hash")))
 
 			body, err := ioutil.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
