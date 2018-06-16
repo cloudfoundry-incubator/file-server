@@ -1,6 +1,8 @@
 package static_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -16,8 +18,9 @@ import (
 
 var _ = Describe("FileServer", func() {
 	var (
-		servedDirectory string
-		fileServer      *httptest.Server
+		servedDirectory                   string
+		fileServer                        *httptest.Server
+		expectedShaTest, expectedShaTest2 string
 	)
 
 	BeforeEach(func() {
@@ -29,13 +32,13 @@ var _ = Describe("FileServer", func() {
 		tenHoursAgo := time.Now().Add(-10 * time.Hour)
 
 		ioutil.WriteFile(filepath.Join(servedDirectory, "test"), []byte("hello"), os.ModePerm)
-		ioutil.WriteFile(filepath.Join(servedDirectory, "test.sha1"), []byte("some-hash\n"), os.ModePerm)
+		sha256bytes := sha256.Sum256([]byte("hello"))
+		expectedShaTest = hex.EncodeToString(sha256bytes[:])
 		os.Chtimes(filepath.Join(servedDirectory, "test"), tenHoursAgo, tenHoursAgo)
 
 		ioutil.WriteFile(filepath.Join(servedDirectory, "test2.."), []byte("world"), os.ModePerm)
-		ioutil.WriteFile(filepath.Join(servedDirectory, "test2...sha1"), []byte("some-hash-2\n"), os.ModePerm)
-
-		ioutil.WriteFile(filepath.Join(servedDirectory, "no-sha"), []byte("hello"), os.ModePerm)
+		sha256bytes = sha256.Sum256([]byte("world"))
+		expectedShaTest2 = hex.EncodeToString(sha256bytes[:])
 
 		fileServer = httptest.NewServer(static.NewFileServer(servedDirectory))
 	})
@@ -52,11 +55,24 @@ var _ = Describe("FileServer", func() {
 			defer resp.Body.Close()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
-			Expect(resp.Header.Get("ETag")).To(Equal(fmt.Sprintf(`"%s"`, "some-hash")))
+			Expect(resp.Header.Get("ETag")).To(Equal(fmt.Sprintf(`"%s"`, expectedShaTest)))
 
 			body, err := ioutil.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(string(body)).To(Equal("hello"))
+		})
+
+		Context("when requesting the file multiple times", func() {
+			It("returns the same ETag on every attempt", func() {
+				Consistently(func() string {
+					resp, err := http.Get(fmt.Sprintf("%s/test", fileServer.URL))
+					Expect(err).NotTo(HaveOccurred())
+					defer resp.Body.Close()
+
+					Expect(resp.StatusCode).To(Equal(http.StatusOK))
+					return resp.Header.Get("ETag")
+				}).Should(Equal(fmt.Sprintf(`"%s"`, expectedShaTest)))
+			})
 		})
 
 		Context("when the file name contains dot dot", func() {
@@ -66,7 +82,7 @@ var _ = Describe("FileServer", func() {
 				defer resp.Body.Close()
 
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
-				Expect(resp.Header.Get("ETag")).To(Equal(fmt.Sprintf(`"%s"`, "some-hash-2")))
+				Expect(resp.Header.Get("ETag")).To(Equal(fmt.Sprintf(`"%s"`, expectedShaTest2)))
 
 				body, err := ioutil.ReadAll(resp.Body)
 				Expect(err).NotTo(HaveOccurred())
@@ -78,13 +94,14 @@ var _ = Describe("FileServer", func() {
 			It("returns a 304 Not Modfied and does not return the file", func() {
 				req, err := http.NewRequest("GET", fmt.Sprintf("%s/test", fileServer.URL), nil)
 				Expect(err).NotTo(HaveOccurred())
-				req.Header.Set("If-None-Match", `"some-hash"`)
+				req.Header.Set("If-None-Match", fmt.Sprintf(`"%s"`, expectedShaTest))
 
 				resp, err := http.DefaultClient.Do(req)
+				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
 				Expect(resp.StatusCode).To(Equal(http.StatusNotModified))
-				Expect(resp.Header.Get("ETag")).To(Equal(fmt.Sprintf(`"%s"`, "some-hash")))
+				Expect(resp.Header.Get("ETag")).To(Equal(fmt.Sprintf(`"%s"`, expectedShaTest)))
 
 				body, err := ioutil.ReadAll(resp.Body)
 				Expect(err).NotTo(HaveOccurred())
@@ -101,10 +118,11 @@ var _ = Describe("FileServer", func() {
 				req.Header.Set("If-Modified-Since", time.Now().Add(-2*time.Hour).Format(http.TimeFormat))
 
 				resp, err := http.DefaultClient.Do(req)
+				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
-				Expect(resp.Header.Get("ETag")).To(Equal(fmt.Sprintf(`"%s"`, "some-hash")))
+				Expect(resp.Header.Get("ETag")).To(Equal(fmt.Sprintf(`"%s"`, expectedShaTest)))
 
 				body, err := ioutil.ReadAll(resp.Body)
 				Expect(err).NotTo(HaveOccurred())
@@ -123,14 +141,6 @@ var _ = Describe("FileServer", func() {
 
 	It("returns 404 on files that don't exist", func() {
 		resp, err := http.Get(fmt.Sprintf("%s/does-not-exist", fileServer.URL))
-		Expect(err).NotTo(HaveOccurred())
-		defer resp.Body.Close()
-
-		Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
-	})
-
-	It("returns 404 when the file exists but the sha file is missing", func() {
-		resp, err := http.Get(fmt.Sprintf("%s/no-sha", fileServer.URL))
 		Expect(err).NotTo(HaveOccurred())
 		defer resp.Body.Close()
 

@@ -1,8 +1,10 @@
 package static
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"path"
@@ -11,12 +13,14 @@ import (
 )
 
 type fileServer struct {
-	root http.FileSystem
+	root     http.FileSystem
+	shaCache map[string]string
 }
 
 func NewFileServer(dir string) http.Handler {
 	return &fileServer{
-		root: http.Dir(dir),
+		root:     http.Dir(dir),
+		shaCache: make(map[string]string),
 	}
 }
 
@@ -39,23 +43,20 @@ func (f *fileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	cksFile, _ := f.validateFile(fmt.Sprintf("%s.sha1", tgzPath), w)
-	if cksFile == nil {
-		return
+	var sha256sum string
+	var ok bool
+	if sha256sum, ok = f.shaCache[tgzPath]; !ok {
+		h := sha256.New()
+		if _, err := io.Copy(h, file); err != nil {
+			http.Error(w, "Error calculating checksum of file", http.StatusInternalServerError)
+			return
+		}
+		sha256sum = hex.EncodeToString(h.Sum(nil)[:])
+		f.shaCache[tgzPath] = sha256sum
 	}
-	defer cksFile.Close()
-
-	cksBytes, err := ioutil.ReadAll(cksFile)
-	if err != nil {
-		http.Error(w, "Cannot read sha1 file", http.StatusInternalServerError)
-		return
-	}
-	sha1sum := strings.TrimSpace(string(cksBytes))
-
-	w.Header().Set("ETag", fmt.Sprintf(`"%s"`, sha1sum))
+	w.Header().Set("ETag", fmt.Sprintf(`"%s"`, sha256sum))
 
 	http.ServeContent(w, r, fileStats.Name(), fileStats.ModTime(), file)
-
 }
 
 // validateFile checks that a file can be found and is not a directory. It
