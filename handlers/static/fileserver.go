@@ -10,17 +10,17 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 type fileServer struct {
 	root     http.FileSystem
-	shaCache map[string]string
+	shaCache sync.Map
 }
 
 func NewFileServer(dir string) http.Handler {
 	return &fileServer{
-		root:     http.Dir(dir),
-		shaCache: make(map[string]string),
+		root: http.Dir(dir),
 	}
 }
 
@@ -43,16 +43,16 @@ func (f *fileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	var sha256sum string
-	var ok bool
-	if sha256sum, ok = f.shaCache[tgzPath]; !ok {
+	cached, ok := f.shaCache.Load(tgzPath)
+	sha256sum, valid := cached.(string)
+	if !ok || !valid {
 		h := sha256.New()
 		if _, err := io.Copy(h, file); err != nil {
 			http.Error(w, "Error calculating checksum of file", http.StatusInternalServerError)
 			return
 		}
 		sha256sum = hex.EncodeToString(h.Sum(nil)[:])
-		f.shaCache[tgzPath] = sha256sum
+		f.shaCache.Store(tgzPath, sha256sum)
 	}
 	w.Header().Set("ETag", fmt.Sprintf(`"%s"`, sha256sum))
 
